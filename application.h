@@ -1,11 +1,11 @@
 #include <gtk/gtk.h>
 #include <gtkextra/gtksheet.h>
-#include <mutex>
 #include <string>
 #include <vector>
 class Application {
  public:
   Application();
+
  private:
   // There shold be different callbacks
 
@@ -14,8 +14,7 @@ class Application {
   static void SheetActivatedRowCallback(GtkSheet *sheet, gint row,
                                         gpointer data);
   static void GenerateButtonCallback(GtkButton *button, gpointer data);
-  void FillTable(
-      const std::vector<std::string> if_from_file = std::vector<std::string>());
+  static void FillTable(Application *data);
   void SetNumberOfRows(const int number_of_rows) {
     number_of_rows_ = number_of_rows;
   };
@@ -25,7 +24,6 @@ class Application {
   const std::string GetFilePath() { return filepath_; };
   void SetTableFromFile();
   int GetNumberOfRows() { return number_of_rows_; };
-  static void CallbackForThread(Application *data) { data->FillTable(); };
 
  private:
   std::string filepath_;
@@ -34,11 +32,12 @@ class Application {
   GtkWidget *window_main_, *generate_button_, *entry_box_, *file_select_,
       *file_save_;
   GtkWidget *error_label_, *row_label_, *progress_label_;
-  GtkWidget *vertical_packing_window_, *horisontal_packing_window_;
+  GtkWidget *vertical_packing_window_, *horisontal_packing_window_,
+      *save_open_packing_window_;
   GtkWidget *scrolled_window_;
   GtkWidget *sheet_;
-  std::mutex mutex;
-  std::thread calc_thread_;
   bool counting_;
   Application *this_;
+  bool created_, read_from_file_;
+  std::vector<std::string> file_rows_;
 };

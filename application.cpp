@@ -1,5 +1,6 @@
 #include "application.h"
 #include <gdk/gdk.h>
+#include <glib.h>
 #include <cctype>
 #include <climits>
 #include <fstream>
@@ -8,9 +9,8 @@
 #include <memory>
 #include <sstream>
 #include <stdexcept>
-#include <thread>
 
-const char* column_names[] = {"Bool", "Integer", "Literal", "Float"};
+const char* column_names[] = {"Integer", "Float", "Literal", "Bool"};
 const int columns_number = 4;
 const int max_generated_int = 10000;
 const char alphabet[] =
@@ -31,7 +31,7 @@ void Application::OpenButton(GtkButton* button, gpointer data) {
       ->SetFilePath(
           gtk_file_chooser_get_filename(GTK_FILE_CHOOSER(choosing_dialog)));
   ((Application*)data)->SetTableFromFile();
-  gtk_widget_destroy (choosing_dialog);
+  gtk_widget_destroy(choosing_dialog);
 };
 
 void Application::SaveButton(GtkButton* button, gpointer data) {
@@ -49,7 +49,7 @@ void Application::SaveButton(GtkButton* button, gpointer data) {
       ->SetFilePath(
           gtk_file_chooser_get_filename(GTK_FILE_CHOOSER(choosing_dialog)));
   ((Application*)data)->WriteTableToFile();
-  gtk_widget_destroy (choosing_dialog);
+  gtk_widget_destroy(choosing_dialog);
 };
 
 void Application::SetTableFromFile() {
@@ -62,9 +62,11 @@ void Application::SetTableFromFile() {
       rows.push_back(row);
       row.clear();
     }
-    FillTable(rows);
+    read_from_file_ = true;
+    file_rows_ = rows;
+    created_ = false;
+    FillTable(this);
   }
-
 }
 
 void Application::WriteTableToFile() {
@@ -78,7 +80,6 @@ void Application::WriteTableToFile() {
 
   std::ofstream file(filepath_, std::ofstream::out);
   if (file.is_open()) {
-    std::cout << table.str();
     file << table.str();
   }
 }
@@ -112,6 +113,7 @@ void Application::GenerateButtonCallback(GtkButton* button, gpointer data) {
     if (isdigit(text[i]) != 0)
       gtk_widget_hide(app->error_label_);
     else {
+    	gtk_label_set_text(((GtkLabel*)(app->error_label_)), "Incorrect input");
       gtk_widget_show(app->error_label_);
       normal_input = false;
     }
@@ -128,76 +130,81 @@ void Application::GenerateButtonCallback(GtkButton* button, gpointer data) {
       rows_number = checking_value;
     }
     app->SetNumberOfRows(rows_number);
-    if (app->calc_thread_.get_id() != std::thread::id()) {
-      (app->calc_thread_).join();
-    }
-
-    // app->FillTable();
-    // std::thread calc_thread(app->CallbackForThread,app->this_);
-    std::thread calc_thread([data]() { ((Application*)data)->FillTable(); });
-    std::cout << "Is joinable ? " << calc_thread.joinable() << std::endl;
-    app->calc_thread_ = std::move(calc_thread);
-    (app->calc_thread_).join();
+    app->created_ = false;
+    g_idle_add((GSourceFunc)FillTable, data);
   };
 };
 
-void Application::FillTable(const std::vector<std::string> if_from_file) {
-  counting_ = true;
-  const int last_rows_size = gtk_sheet_get_rows_count((GtkSheet*)sheet_);
-  int row_number;
-  if (if_from_file.empty()) {
-    row_number = number_of_rows_;
-  } else {
-    row_number = if_from_file.size();
-  }
-
-  int rows_difference = row_number - last_rows_size;
-  for (size_t i = 0; i < row_number; ++i) {
-    std::ostringstream ostr;
-    ostr << i + 1 << " from " << row_number << " rows gererated" << std::endl;
-    gtk_label_set_text(((GtkLabel*)(progress_label_)), ostr.str().c_str());
-    gtk_widget_show(progress_label_);
-    if (counting_ == false) {
-      break;
+void Application::FillTable(Application* data) {
+  if (!data->created_) {
+    data->counting_ = true;
+    while (gtk_events_pending()) gtk_main_iteration();
+    const int last_rows_size =
+        gtk_sheet_get_rows_count((GtkSheet*)(data->sheet_));
+    int row_number;
+    if (!data->read_from_file_) {
+      row_number = data->number_of_rows_;
+    } else {
+      row_number = (data->file_rows_).size();
     }
 
-    if (rows_difference > 0 && i > last_rows_size - 1) {
-      gtk_sheet_add_row((GtkSheet*)sheet_, 1);
-    }
+    int rows_difference = row_number - last_rows_size;
+    for (int i = 0; i < row_number; ++i) {
+      while (gtk_events_pending()) gtk_main_iteration();
+      std::ostringstream ostr;
+      ostr << i + 1 << " from " << row_number << " rows gererated" << std::endl;
 
-    std::vector<std::string> row;
-    if (if_from_file.empty()) {
-      row = GenerateRandomRow();
-    }
-    else {
-      std::istringstream str(if_from_file[i]);
-      row.resize(columns_number);
-      for (size_t i = 0 ; i < columns_number; ++i)
-      {
-      	str >> row[i];
+      while (gtk_events_pending()) gtk_main_iteration();
+      gtk_label_set_text(((GtkLabel*)(data->progress_label_)),
+                         ostr.str().c_str());
+      gtk_widget_show(data->progress_label_);
+
+      if (data->counting_ == false) {
+        break;
       }
+      if (rows_difference > 0 && i > last_rows_size - 1) {
+        while (gtk_events_pending()) gtk_main_iteration();
+        gtk_sheet_add_row((GtkSheet*)(data->sheet_), 1);
+      }
+      std::vector<std::string> row;
+      if (!(data->read_from_file_)) {
+        row = data->GenerateRandomRow();
 
+      } else {
+        std::cout << "123" << std::endl;
+        std::istringstream str((data->file_rows_)[i]);
+        row.resize(columns_number);
+        for (size_t i = 0; i < columns_number; ++i) {
+          str >> row[i];
+        }
+      }
+      for (size_t j = 0; j < columns_number; ++j) {
+        gtk_sheet_set_cell_text((GtkSheet*)(data->sheet_), i, j,
+                                row[j].c_str());
+      }
     }
-    for (size_t j = 0; j < columns_number; ++j) {
-      gtk_sheet_set_cell_text((GtkSheet*)sheet_, i, j, row[j].c_str());
-    }
+
+    while (gtk_events_pending()) gtk_main_iteration();
+    if (rows_difference < 0) {
+      rows_difference = -rows_difference;
+      gtk_sheet_delete_rows((GtkSheet*)(data->sheet_),
+                            last_rows_size - rows_difference, rows_difference);
+    };
+    data->counting_ = false;
+    data->created_ = true;
+
+    if (data->read_from_file_) data->read_from_file_ = false;
   }
-
-  if (rows_difference < 0) {
-    rows_difference = -rows_difference;
-    gtk_sheet_delete_rows((GtkSheet*)sheet_, last_rows_size - rows_difference,
-                          rows_difference);
-  };
-
-  counting_ = false;
   return;
 };
 
-Application::Application() : counting_(false), this_(this) {
+Application::Application()
+    : counting_(false), this_(this), created_(false), read_from_file_(false) {
   generate_button_ = gtk_button_new_with_label("Generate");
   window_main_ = gtk_window_new(GTK_WINDOW_TOPLEVEL);
   horisontal_packing_window_ = gtk_hbox_new(FALSE, TRUE);
   vertical_packing_window_ = gtk_vbox_new(FALSE, TRUE);
+  save_open_packing_window_ = gtk_hbox_new(TRUE, TRUE);
 
   g_signal_connect(G_OBJECT(window_main_), "destroy", G_CALLBACK(gtk_main_quit),
                    NULL);
@@ -224,7 +231,7 @@ Application::Application() : counting_(false), this_(this) {
   g_signal_connect(G_OBJECT(file_select_), "clicked", G_CALLBACK(OpenButton),
                    (gpointer)this);
 
-g_signal_connect(G_OBJECT(file_save_), "clicked", G_CALLBACK(SaveButton),
+  g_signal_connect(G_OBJECT(file_save_), "clicked", G_CALLBACK(SaveButton),
                    (gpointer)this);
 
   gtk_box_pack_start(GTK_BOX(vertical_packing_window_), entry_box_, FALSE,
@@ -242,11 +249,14 @@ g_signal_connect(G_OBJECT(file_save_), "clicked", G_CALLBACK(SaveButton),
   gtk_box_pack_start(GTK_BOX(vertical_packing_window_), progress_label_, FALSE,
                      FALSE, FALSE);
 
-  gtk_box_pack_start(GTK_BOX(vertical_packing_window_), file_select_, FALSE,
-                     FALSE, FALSE);
+  gtk_box_pack_start(GTK_BOX(save_open_packing_window_), file_select_, TRUE,
+                     TRUE, FALSE);
 
-  gtk_box_pack_start(GTK_BOX(vertical_packing_window_), file_save_, FALSE,
-                     FALSE, FALSE);
+  gtk_box_pack_start(GTK_BOX(save_open_packing_window_), file_save_, TRUE, TRUE,
+                     FALSE);
+
+  gtk_box_pack_start(GTK_BOX(vertical_packing_window_),
+                     save_open_packing_window_, FALSE, FALSE, FALSE);
 
   gtk_box_pack_start(GTK_BOX(horisontal_packing_window_),
                      vertical_packing_window_, FALSE, FALSE, FALSE);
