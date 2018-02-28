@@ -1,7 +1,4 @@
-# TableTask
-Not implemented features:
-1.Threads processing is not implemented
-
+#TableTask
 
 Build instructions(On MacOS and Linux)
 
@@ -11,4 +8,4 @@ I think you can do same installations on Linux systems.
 
 2. Open MakeFile.am .
 Write instead of "/usr/local/bin/g++-7" you compiler path(it should support c++11).
-Build programm using command "make -f Makefile.am" from directory where your downloaded project files . 
+Build programm using command "make -f Makefile.am" from directory where your downloaded project files .
